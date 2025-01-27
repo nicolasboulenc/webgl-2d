@@ -6,6 +6,8 @@ const rasterizer = { program: null, locations: null }
 const textures = new Map()
 
 const PLAYER_SCALE = 1
+const PLAYER_Y_OFFSET = 64
+const PLAYER_SPEED = 2
 const PIXEL_TRIM = 0
 
 let level = null
@@ -41,18 +43,34 @@ let input = {
 	attack3: false
 }
 
-const player = {
+const entity = {
+	state: STATE.IDLE,
 	x: 220,
 	y: 384,
-	state: STATE.IDLE,
 	special: "",
 	sprites: null,
 	animations: null,
 	texture: null,
 	pos_buffer: 0,
 	tex_buffer: 0,
-	geometry: null
+	geometry: null,
+	// movement
+	destination: { x: 0, y: 0 },
+	dmove: { x: 0, y: 0},			// based on PLAYER_SPEED
 }
+
+
+const debug = {
+	x: 0,
+	y: 0,
+	path: "resources/Tiny Swords (Update 010)/UI/Pointers/02.png",
+	texture: null,
+	pos_buffer: 0,
+	tex_buffer: 0,
+	geometry: null,
+}
+
+
 let animation_start_time = 0
 
 const scale = 1
@@ -94,18 +112,33 @@ async function init() {
 	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data.texcoords), gl.STATIC_DRAW)
 
 	// to fix
-	player.pos_buffer = gl.createBuffer()
-	player.tex_buffer = gl.createBuffer()
+	entity.pos_buffer = gl.createBuffer()
+	entity.tex_buffer = gl.createBuffer()
 
-	player.animations = await aseprite_fetch("resources/Warrior_Blue.json")		//loaded as a script src in the HTML (index.html)
-	const texture = textures.get(player.animations.meta.image)
-	player.sprites = texture.image
-	player.texture = texture.id
+	entity.animations = await aseprite_fetch("resources/Warrior_Blue.json")		//loaded as a script src in the HTML (index.html)
+	const texture = textures.get(entity.animations.meta.image)
+	entity.sprites = texture.image
+	entity.texture = texture.id
+
+
+	// debug stuff
+	debug.pos_buffer = gl.createBuffer()
+	debug.tex_buffer = gl.createBuffer()
+
+	const image = await image_load(debug.path)
+	const id = texture_create(image)
+	textures.set(debug.path, { source: debug.path, image: image, id: id })
+
+	const debug_texture = textures.get(debug.path)
+	debug.sprites = debug_texture.image
+	debug.texture = debug_texture.id
+
 
 	animation_start_time = Date.now()
 
 	window.addEventListener("keydown", window_on_keydown)
 	window.addEventListener("keyup", window_on_keyup)
+	window.addEventListener("mousemove", window_on_mousemove)
 	window.addEventListener("mousedown", window_on_mousedown)
 	window.addEventListener("mouseup", window_on_mouseup)
 	// window.addEventListener("contextmenu", canvas_on_context)	
@@ -346,19 +379,19 @@ function level_generate_geometry(level) {
 function player_generate_geometry(player_frame) {
 
 	const positions = [
-		player.x - (player_frame.w * PLAYER_SCALE / 2),	player.y - (player_frame.h - PIXEL_TRIM) * PLAYER_SCALE,	0,
-		player.x - (player_frame.w * PLAYER_SCALE / 2),	player.y,													0,
-		player.x + (player_frame.w * PLAYER_SCALE / 2),	player.y,													0,
+		entity.x - (player_frame.w * PLAYER_SCALE / 2),	entity.y - (player_frame.h - PIXEL_TRIM) * PLAYER_SCALE + PLAYER_Y_OFFSET,	0,
+		entity.x - (player_frame.w * PLAYER_SCALE / 2),	entity.y + PLAYER_Y_OFFSET,													0,
+		entity.x + (player_frame.w * PLAYER_SCALE / 2),	entity.y + PLAYER_Y_OFFSET,													0,
 
-		player.x + (player_frame.w * PLAYER_SCALE / 2),	player.y,													0,
-		player.x + (player_frame.w * PLAYER_SCALE / 2),	player.y - (player_frame.h - PIXEL_TRIM) * PLAYER_SCALE,	0,
-		player.x - (player_frame.w * PLAYER_SCALE / 2),	player.y - (player_frame.h - PIXEL_TRIM) * PLAYER_SCALE,	0,
+		entity.x + (player_frame.w * PLAYER_SCALE / 2),	entity.y + PLAYER_Y_OFFSET,													0,
+		entity.x + (player_frame.w * PLAYER_SCALE / 2),	entity.y - (player_frame.h - PIXEL_TRIM) * PLAYER_SCALE + PLAYER_Y_OFFSET,	0,
+		entity.x - (player_frame.w * PLAYER_SCALE / 2),	entity.y - (player_frame.h - PIXEL_TRIM) * PLAYER_SCALE + PLAYER_Y_OFFSET,	0,
 	]
 	
-	const u = player_frame.x / player.sprites.width
-	const v = player_frame.y / player.sprites.height
-	const s = player_frame.w / player.sprites.width
-	const t = player_frame.h / player.sprites.height
+	const u = player_frame.x / entity.sprites.width
+	const v = player_frame.y / entity.sprites.height
+	const s = player_frame.w / entity.sprites.width
+	const t = player_frame.h / entity.sprites.height
 
 	let texcoords = [
 		u,		v,
@@ -369,7 +402,7 @@ function player_generate_geometry(player_frame) {
 		u, 		v
 	]
 
-	if(player.special === "reversed") {
+	if(entity.special === "reversed") {
 		texcoords = [
 			u+s,	v,
 			u+s,	v+t,
@@ -384,13 +417,62 @@ function player_generate_geometry(player_frame) {
 }
 
 
+function debug_generate_geometry(debug) {
+
+	const positions = [
+		debug.x - (64 / 2),	debug.y - (64) + 32,	0,
+		debug.x - (64 / 2),	debug.y + 32,			0,
+		debug.x + (64 / 2),	debug.y + 32,			0,
+
+		debug.x + (64 / 2),	debug.y + 32,			0,
+		debug.x + (64 / 2),	debug.y - (64) + 32,	0,
+		debug.x - (64 / 2),	debug.y - (64) + 32,	0,
+	]
+	
+	const u = 0
+	const v = 0
+	const s = 1
+	const t = 1
+
+	let texcoords = [
+		u,		v,
+		u, 		v+t,
+		u+s,	v+t,
+		u+s,	v+t,
+		u+s,	v,
+		u, 		v
+	]
+
+	return { positions: positions, texcoords: texcoords }
+}
+
+
 function loop(timestamp) {
 
-	// process key down/up and mouse down/up and set player.state
+	// process key down/up and mouse down/up and set entity.state
 	process_input();
 
+	if(entity.state === STATE.MOVE) {
+		entity.x += entity.dmove.x
+		entity.y += entity.dmove.y
+	}
+
+	// console.log(`${entity.destination.x - Math.abs(entity.dmove.x)} < ${entity.x} < ${entity.destination.x + Math.abs(entity.dmove.x)}`)
+	// console.log(`${entity.destination.y - Math.abs(entity.dmove.y)} < ${entity.y} < ${entity.destination.y + Math.abs(entity.dmove.y)}`)
+
+	if( entity.x >= entity.destination.x - Math.abs(entity.dmove.x) && entity.x <= entity.destination.x + Math.abs(entity.dmove.x) &&
+		entity.y >= entity.destination.y - Math.abs(entity.dmove.y) && entity.y <= entity.destination.y + Math.abs(entity.dmove.y) ) {
+
+			// adjust entity movement
+			entity.x = Math.floor(entity.x / 64) * 64 + 32
+			entity.y = Math.floor(entity.y / 64) * 64 + 32
+			entity.state = STATE.IDLE
+	}
+
 	const player_frame = calc_player_animation()
-	player.geometry = player_generate_geometry(player_frame)
+	entity.geometry = player_generate_geometry(player_frame)
+
+	debug.geometry = debug_generate_geometry(debug)
 
 	draw()
 
@@ -429,15 +511,31 @@ function draw() {
 		gl.drawArrays(gl.TRIANGLES, conf.offset/3, conf.length/3)		// run our program by drawing points (one for now)
 	}
 
-
-	// draw player
-	gl.bindBuffer(gl.ARRAY_BUFFER, player.pos_buffer)
-	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(player.geometry.positions), gl.DYNAMIC_DRAW)
+	// draw debug
+	gl.bindBuffer(gl.ARRAY_BUFFER, debug.pos_buffer)
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(debug.geometry.positions), gl.DYNAMIC_DRAW)
 	gl.enableVertexAttribArray(rasterizer.locations.a_position.location)
 	gl.vertexAttribPointer(rasterizer.locations.a_position.location, 3, gl.FLOAT, false, 0, 0)
 
-	gl.bindBuffer(gl.ARRAY_BUFFER, player.tex_buffer)
-	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(player.geometry.texcoords), gl.DYNAMIC_DRAW)
+	gl.bindBuffer(gl.ARRAY_BUFFER, debug.tex_buffer)
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(debug.geometry.texcoords), gl.DYNAMIC_DRAW)
+	gl.enableVertexAttribArray(rasterizer.locations.a_texcoord.location)
+	gl.vertexAttribPointer(rasterizer.locations.a_texcoord.location, 2, gl.FLOAT, false, 0, 0)
+
+	const debug_texture_id = textures.get(debug.path).id
+	gl.bindTexture(gl.TEXTURE_2D, debug_texture_id)
+	gl.drawArrays(gl.TRIANGLES, 0, 6)
+
+
+
+	// draw player
+	gl.bindBuffer(gl.ARRAY_BUFFER, entity.pos_buffer)
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(entity.geometry.positions), gl.DYNAMIC_DRAW)
+	gl.enableVertexAttribArray(rasterizer.locations.a_position.location)
+	gl.vertexAttribPointer(rasterizer.locations.a_position.location, 3, gl.FLOAT, false, 0, 0)
+
+	gl.bindBuffer(gl.ARRAY_BUFFER, entity.tex_buffer)
+	gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(entity.geometry.texcoords), gl.DYNAMIC_DRAW)
 	gl.enableVertexAttribArray(rasterizer.locations.a_texcoord.location)
 	gl.vertexAttribPointer(rasterizer.locations.a_texcoord.location, 2, gl.FLOAT, false, 0, 0)
 
@@ -519,7 +617,7 @@ function shader_program_get_parameters(gl, program) {
 	while(is_uniform < 2) {
 		let param_type = is_uniform ? gl.ACTIVE_UNIFORMS : gl.ACTIVE_ATTRIBUTES
 		let count = gl.getProgramParameter(program, param_type)
-		
+
 		for(let i=0; i < count; i++) {
 			let details = null
 			let location = null
@@ -565,9 +663,29 @@ function window_on_keyup(evt) {
 }
 
 
+function window_on_mousemove(evt) {
+
+	const bbox = document.querySelector("#display").getBoundingClientRect()
+	debug.x = Math.floor((evt.clientX - bbox.left) / 64) * 64 + 32
+	debug.y = Math.floor((evt.clientY - bbox.top) / 64) * 64 + 32
+}
+
 function window_on_mousedown(evt) {
 	if(evt.button === 0) {
 
+		entity.state = STATE.MOVE
+		const bbox = document.querySelector("#display").getBoundingClientRect()
+		entity.destination.x = Math.floor((evt.clientX - bbox.left) / 64) * 64 + 32
+		entity.destination.y = Math.floor((evt.clientY - bbox.top) / 64) * 64 + 32
+		console.log(entity.destination)
+
+		const distance = Math.sqrt( (entity.x - entity.destination.x) * (entity.x - entity.destination.x) + (entity.y - entity.destination.y) * (entity.y - entity.destination.y) )
+		entity.dmove.x = PLAYER_SPEED / distance * (entity.destination.x - entity.x)
+		entity.dmove.y = PLAYER_SPEED / distance * (entity.destination.y - entity.y)
+		console.log(entity.dmove)
+
+		debug.x = Math.floor(entity.destination.x / 64) * 64 + 32
+		debug.y = Math.floor(entity.destination.y / 64) * 64 + 32
 	}
 }
 
@@ -589,16 +707,16 @@ function calc_player_animation() {
 	let tag = "idle"
 	let animation_time = animation_idle_dtime
 
-	if(player.state & STATE.IDLE) {
+	if(entity.state & STATE.IDLE) {
 		tag = "idle"
 	}
-	else if(player.state & STATE.MOVE) {
+	else if(entity.state & STATE.MOVE) {
 		tag = "run"
 	}
 
 	let frame_count = 0
 	let frame_from = 0
-	for(const frame_stats of player.animations.meta.frameTags) {
+	for(const frame_stats of entity.animations.meta.frameTags) {
 		if(frame_stats.name === tag) {
 			frame_count = frame_stats.from - frame_stats.to + 1
 			frame_from = frame_stats.from
@@ -607,7 +725,7 @@ function calc_player_animation() {
 	}
 
 	const frame_index = frame_from + Math.floor((Date.now() - animation_start_time) / animation_time) % frame_count
-	const frame = player.animations.frames[frame_index].frame
+	const frame = entity.animations.frames[frame_index].frame
 
 	return frame
 }
