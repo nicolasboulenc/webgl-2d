@@ -1,0 +1,14 @@
+{ "columns":10,
+ "image":"logic.png",
+ "imageheight":256,
+ "imagewidth":640,
+ "margin":0,
+ "name":"logic",
+ "spacing":0,
+ "tilecount":40,
+ "tiledversion":"1.11.1-99-gec89c545",
+ "tileheight":64,
+ "tilewidth":64,
+ "type":"tileset",
+ "version":"1.10"
+}

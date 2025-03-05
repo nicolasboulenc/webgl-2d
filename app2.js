@@ -11,21 +11,9 @@ const PLAYER_SPEED = 2
 const PIXEL_TRIM = 0
 
 let level = null
-const level_info = {
-	spawn: { x: 0, y: 0, z: 0 }
-}
 let data = null
 let pos_buffer = null
 let tex_buffer = null
-
-const LOGIC_TILESET_NAME = "logic.tsj"
-let LOGIC_TILES_OFFSET = 0
-const LOGIC_TILES = {
-	WALK:	0,
-	SPAWN:	1,
-	STAIRS: 2
-}
-
 
 let draw_configurations = []
 
@@ -99,7 +87,7 @@ async function init() {
 	gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 
 	// gl.enable(gl.DEPTH_TEST)
-	
+
 	console.log(gl.getParameter(gl.VERSION))
 	console.log(gl.getParameter(gl.SHADING_LANGUAGE_VERSION))
 
@@ -114,14 +102,6 @@ async function init() {
 
 	level = await tiled_fetch("resources/top-level.tmj")
 	data = level_generate_geometry(level)
-
-	// find logic tiles first id
-	for(tileset of level.tilesets) {
-		if(tileset.source === LOGIC_TILESET_NAME) {
-			LOGIC_TILES_OFFSET = tileset.firstgid
-			break
-		}
-	}
 
 	pos_buffer = gl.createBuffer()
 	tex_buffer = gl.createBuffer()
@@ -139,6 +119,7 @@ async function init() {
 	const texture = textures.get(entity.animations.meta.image)
 	entity.sprites = texture.image
 	entity.texture = texture.id
+
 
 	// debug stuff
 	debug.pos_buffer = gl.createBuffer()
@@ -174,11 +155,13 @@ async function tiled_fetch(url) {
 
 	for(const ts of level.tilesets) {
 
-		// standard tiles
-		if(ts.source !== "undefined") {
-
-			// do not load logic tileset, this is for dev only
-			if(ts.source === LOGIC_TILESET_NAME) continue
+		if(typeof ts.image !== "undefined") {
+			const source = ts.image
+			const image = await image_load(`${base}/${source}`)
+			const id = texture_create(image)
+			textures.set(source, { source: source, image: image, id: id })
+		}
+		else if(ts.source !== "undefined") {
 
 			let response = await fetch(`resources/${ts.source}`);
 			const tsj = await response.json();
@@ -193,13 +176,6 @@ async function tiled_fetch(url) {
 				const id = texture_create(image)
 				textures.set(source, { source: source, image: image, id: id })
 			}
-		}
-		// to fix: what is this for?
-		else if(typeof ts.image !== "undefined") {
-			const source = ts.image
-			const image = await image_load(`${base}/${source}`)
-			const id = texture_create(image)
-			textures.set(source, { source: source, image: image, id: id })
 		}
 	}
 
@@ -223,24 +199,6 @@ async function tiled_fetch(url) {
 		}
 		level.backgroundcolor = color
 	}
-
-	// compile a list of layers to draw, considering groups and potentially nested groups of layers
-	const layers_list = Array.from(level.layers)
-	let index = 0;
-	while(index < layers_list.length) {
-
-		const layer = layers_list[index]
-		if(layer.type === "group" && layer.name === "logic") {
-			for(const l of layer.layers) {
-				layers_list.push(l)
-			}
-		}
-		if(layer.type === "tilelayer" && layer.visible === true) {
-			layers_draw.push(layer)
-		}
-		index++
-	}
-
 
 	return level
 }
@@ -295,9 +253,9 @@ function level_generate_geometry(level) {
 	for(let i=0; i<layers_draw.length; i++) {
 
 		const layer = layers_draw[i]
-		const z = (layers_draw.length - i) / layers_draw.length - 0.1
+		const z = (layers_draw.length - i) / layers_draw.length
 
-		console.log(`layer num:${i} z:${z}`)
+		// console.log(`layer num:${i} z:${z}`)
 
 		if(layer.type === "imagelayer") {
 
@@ -350,12 +308,12 @@ function level_generate_geometry(level) {
 				const y = row * th
 
 				positions_by_set[tsi].push(
-					x,		y,		z,
-					x,		y+th,	z,
-					x+tw,	y+th,	z,
-					x+tw,	y+th,	z,
-					x+tw,	y,		z,
-					x,		y,		z
+					x,		y,		0,
+					x,		y+th,	0,
+					x+tw,	y+th,	0,
+					x+tw,	y+th,	0,
+					x+tw,	y,		0,
+					x,		y,		0
 				)
 
 				tile = tile - level.tilesets[tsi].firstgid 
@@ -375,8 +333,6 @@ function level_generate_geometry(level) {
 			}
 			// no depth test
 			for(let tsi=0; tsi<positions_by_set.length; tsi++) {
-
-				if(positions_by_set[tsi].length === 0) continue
 
 				const xys = positions_by_set[tsi]
 				const uvs = texcoords_by_set[tsi]
@@ -414,6 +370,7 @@ function level_generate_geometry(level) {
 	// 		texcoords.push(uvs[i])
 	// 	}
 	// }
+
 
 	return { positions: positions, texcoords: texcoords }
 }
@@ -526,8 +483,8 @@ function loop(timestamp) {
 function draw() {
 
 	gl.clearColor(level.backgroundcolor.r, level.backgroundcolor.g, level.backgroundcolor.b, 1)
-	gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)		// clear screen
-	// gl.clear(gl.COLOR_BUFFER_BIT)		// clear screen
+	// gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)		// clear screen
+	gl.clear(gl.COLOR_BUFFER_BIT)		// clear screen
 
 	gl.useProgram(rasterizer.program)
 
